@@ -1,6 +1,5 @@
 #include "loader.h"
 
-typedef void (*void_func_t)(void);
 Elf32_Ehdr *ehdr;
 Elf32_Phdr *phdr;
 void* virt;
@@ -11,19 +10,18 @@ unsigned int memsza;
  */
 void loader_cleanup() 
 {
-	if(ehdr)
+	if(ehdr) //free elf header
 	{
 		free(ehdr);
 		ehdr=NULL;	 
 	}
-	if(phdr)
+	if(phdr) //free program header
 	{
 		free(phdr);
 		phdr=NULL;
 	}
-	if (virt)
+	if(virt) //free virtual memory
 	{
-		
 		munmap(virt, memsza);
 		virt = NULL;
 	}
@@ -34,16 +32,14 @@ void loader_cleanup()
  */
 void load_and_run_elf(const char* exe) 
 {
-    // const char *object_file_name = argv[1];
     FILE *object_file = fopen(exe, "rb");
     if (object_file == NULL)
 	{
 		fprintf(stderr, "Unable to open file\n");
+		fclose(object_file);
 		exit(1);
-		// return 1;
     }
 
-    // printf("2");
 	ehdr = malloc(sizeof(Elf32_Ehdr));
     fread(ehdr, sizeof(Elf32_Ehdr),1,object_file);
 
@@ -51,14 +47,15 @@ void load_and_run_elf(const char* exe)
 	{
 		fprintf(stderr,"Invalid ELF header!\n");
 		loader_cleanup();
+		fclose(object_file);
 		exit(1);
     }
     
-
 	if (ehdr->e_ident[EI_CLASS]!=ELFCLASS32|| ehdr->e_ident[EI_DATA]!=ELFDATA2LSB)
 	{
 		fprintf(stderr,"Not 32 bit and little endian\n");
 		loader_cleanup();
+		fclose(object_file);
 		exit(1);
 	}
 
@@ -66,6 +63,7 @@ void load_and_run_elf(const char* exe)
 	{
 		fprintf(stderr,"Not Executable file");
 		loader_cleanup();
+		fclose(object_file);	
 		exit(1);
     }
 	unsigned short phcount = ehdr->e_phnum;
@@ -75,15 +73,12 @@ void load_and_run_elf(const char* exe)
     // printf("phoff %x", ehdr->e_phoff);
     fseek(object_file, ehdr->e_phoff, SEEK_SET);
 	fread(phdr, phcount * phsize, 1, object_file);
-    // printf("3\n");
 
-	// printf("3");
     // printf("ehdr entry is %x\n", ehdr->e_entry);
 	for(unsigned short i = 0; i<phcount; i++)
 	{
         // printf("type is %d\n", phdr[i].p_type);
 		if(phdr[i].p_type==PT_LOAD && phdr[i].p_flags==PF_R+PF_X)
-        // if(phdr[i].p_vaddr < ehdr->e_entry && phdr[i].p_vaddr+phdr[i].p_align > ehdr->e_entry)
 		{
 			// printf("found");
 			memsza=phdr[i].p_memsz;
@@ -95,17 +90,16 @@ void load_and_run_elf(const char* exe)
                 exit(1);
             }
             // printf("offset is %x\n", phdr[i].p_offset);
-            // printf("size if %x\n", phdr[i].p_memsz);
+            // printf("size is %x\n", phdr[i].p_memsz);
 			fseek(object_file, phdr[i].p_offset, SEEK_SET);
 			fread(virt, phdr[i].p_filesz, 1, object_file);
+			fclose(object_file);
             // printf("virt = %p\n", virt);
-            // printf("v = %x\n", phdr[i].p_vaddr);
-            // printf("bracker = %x\n",  (ehdr->e_entry - phdr[i].p_vaddr));
 
+            typedef int (*func_ptr_t)(void); //function pointer type, returns int and typecastes void*
 
-            typedef int (*func_ptr_t)(void);
+            func_ptr_t func = (func_ptr_t)(virt + (ehdr->e_entry - phdr[i].p_vaddr)); //lhs = function pointer, rhs = void pointer
 
-            func_ptr_t func = (func_ptr_t)(virt + (ehdr->e_entry - phdr[i].p_vaddr)); //lhs = function pointer, rhs = ?
             int ans = func();
   			printf("User _start return value = %d\n",ans);
 			break;
